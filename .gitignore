@@ -1,0 +1,7 @@
+# Ignorar los plugins y carpetas de Terraform
+.terraform/
+.terraform.lock.hcl
+
+# Ignorar los archivos de estado (¡Muy importante por seguridad!)
+*.tfstate
+*.tfstate.backup

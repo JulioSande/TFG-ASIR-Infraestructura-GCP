@@ -31,6 +31,40 @@ resource "google_compute_instance" "servidor_web" {
     apt-get install -y apache2
     systemctl start apache2
     systemctl enable apache2
-    echo "<h1>¡El Servidor Web de Julio ha sido desplegado con Terraform!</h1>" > /var/www/html/index.html
+    echo "<html><head><meta charset='utf-8'></head><body><h1>¡El Servidor Web de Julio ha sido desplegado con Terraform!</h1></body></html>" > /var/www/html/index.html
+  EOF
+}
+
+
+# 2. Creación del Servidor de Base de Datos en la Subred Privada
+resource "google_compute_instance" "base_datos" {
+  name         = "servidor-db-asir"
+  machine_type = "e2-micro"
+  zone         = "europe-southwest1-a"
+
+  # Vincula esta máquina con la regla de firewall que aísla la DB
+  tags = ["base-datos"]
+
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-11"
+    }
+  }
+
+  network_interface {
+    network    = google_compute_network.vpc_asir.id
+    subnetwork = google_compute_subnetwork.subred_privada.id
+    
+    # ¡MUY IMPORTANTE! Aquí NO ponemos el bloque 'access_config'.
+    # Al no ponerlo, Google sabe que esta máquina NO debe tener IP pública.
+  }
+
+  # Script de inicio para instalar el motor de Base de Datos (MariaDB)
+  metadata_startup_script = <<-EOF
+    #!/bin/bash
+    apt-get update
+    apt-get install -y mariadb-server
+    systemctl start mariadb
+    systemctl enable mariadb
   EOF
 }

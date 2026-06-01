@@ -36,7 +36,7 @@ resource "google_compute_instance" "servidor_web" {
 
     cat << 'PHP_EOF' > /var/www/html/index.php
     <?php
-    $servername = "10.0.2.4";
+    $servername = "10.0.2.2";
     $username = "user_tfg";
     $password = "Password123!";
     $dbname = "tfg_db";

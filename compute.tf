@@ -28,7 +28,7 @@ resource "google_compute_instance" "servidor_web" {
     rm -f /var/www/html/index.html
 
     cat << 'PHP_EOF' > /var/www/html/index.php
-${file("web_claude.php")}
+${file("web_TFG.php")}
 PHP_EOF
 
     systemctl restart apache2

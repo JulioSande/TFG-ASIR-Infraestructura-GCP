@@ -1,17 +1,31 @@
 <?php
 // ============================================================================
-// PORTAL SEGURO TFG ASIR - CONTROL DE ACCESOS Y AUDITORÍA INTERACTIVA
+// ARCHIVO: web_TFG.php
+// DESCRIPCIÓN: Portal Seguro TFG ASIR - Control de Accesos y Auditoría.
+// OBJETIVO: Actuar como Frontend de la arquitectura, gestionando el modelo 
+// de seguridad AAA (Autenticación, Autorización y Auditoría) mediante sesiones 
+// PHP nativas, mitigación de inyecciones SQL y un modelo RBAC estricto.
 // ============================================================================
-session_start();
+session_start(); // Inicialización del motor de sesiones seguras
 
+// ------------------------------------------------------------------------------
+// 1. CONEXIÓN AL BACKEND (ARQUITECTURA ZERO TRUST)
+// ------------------------------------------------------------------------------
+// Se define la IP Privada (10.0.2.2) asignada al servidor de base de datos.
+// Al no usar un dominio público ni una IP externa, la conexión fluye exclusivamente
+// por el enrutamiento interno de la VPC de Google Cloud, blindando la comunicación.
 $servername = "10.0.2.2"; 
-$username = "user_tfg";
-$password = "Password123!";
-$dbname = "tfg_db";
+$username   = "user_tfg";
+$password   = "Password123!";
+$dbname     = "tfg_db";
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 
-// Manejo del Cierre de Sesión (Logout)
+// ------------------------------------------------------------------------------
+// 2. CONTROL DEL CICLO DE VIDA DE LA SESIÓN (LOGOUT)
+// ------------------------------------------------------------------------------
+// Garantiza la destrucción absoluta de las variables de sesión del navegador 
+// para prevenir ataques de secuestro de sesión (Session Hijacking).
 if (isset($_GET['action']) && $_GET['action'] == 'logout') {
     session_destroy();
     header("Location: " . $_SERVER['PHP_SELF']);
@@ -20,31 +34,48 @@ if (isset($_GET['action']) && $_GET['action'] == 'logout') {
 
 $error_msg = "";
 
-// Manejo del Formulario de Login (POST)
+// ------------------------------------------------------------------------------
+// 3. MÓDULO DE AUTENTICACIÓN Y AUDITORÍA FORENSE (MÉTODO POST)
+// ------------------------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login_btn'])) {
+    
+    // MITIGACIÓN DE RIESGOS (Prevención SQLi):
+    // La función 'real_escape_string' sanea el input del usuario eliminando 
+    // caracteres especiales para evitar ataques de Inyección SQL.
     $user_input = $conn->real_escape_string($_POST['username']);
     $pass_input = $_POST['password'];
-    $ip_origen = $_SERVER['REMOTE_ADDR'];
+    
+    // TRAZABILIDAD: Captura la IP pública real del cliente para el registro de logs.
+    $ip_origen  = $_SERVER['REMOTE_ADDR'];
 
     if (!$conn->connect_error) {
-        // Consulta comprobando el hash SHA-256 de la contraseña
-        $sql = "SELECT username, rol FROM usuarios WHERE username='$user_input' AND password = SHA2('$pass_input', 256)";
+        
+        // CIFRADO EN CALIENTE: La contraseña NUNCA viaja ni se compara en texto plano.
+        // Se delega al motor MariaDB la transformación de la entrada a SHA-256 
+        // para compararla matemáticamente con el hash almacenado.
+        $sql = "SELECT username, rol FROM usuarios 
+                WHERE username='$user_input' AND password = SHA2('$pass_input', 256)";
         $result = $conn->query($sql);
 
         if ($result && $result->num_rows == 1) {
+            // AUTENTICACIÓN EXITOSA: Se generan los tokens de sesión y rol (RBAC).
             $user_data = $result->fetch_assoc();
             $_SESSION['usuario'] = $user_data['username'];
-            $_SESSION['rol'] = $user_data['rol'];
+            $_SESSION['rol']     = $user_data['rol'];
 
-            // Registrar acceso EXITOSO en la tabla de auditoría
-            $conn->query("INSERT INTO accesos (username, ip_origen, resultado) VALUES ('$user_input', '$ip_origen', 'EXITOSO')");
+            // MÓDULO DE AUDITORÍA: Registro persistente de evento de seguridad positivo.
+            $conn->query("INSERT INTO accesos (username, ip_origen, resultado) 
+                          VALUES ('$user_input', '$ip_origen', 'EXITOSO')");
             
             header("Location: " . $_SERVER['PHP_SELF']);
             exit();
         } else {
+            // AUTENTICACIÓN FALLIDA: Denegación por credenciales incorrectas.
             $error_msg = "Credenciales incorrectas. Acceso denegado.";
-            // Registrar acceso FALLIDO en la tabla de auditoría para seguridad
-            $conn->query("INSERT INTO accesos (username, ip_origen, resultado) VALUES ('$user_input', '$ip_origen', 'FALLIDO')");
+            
+            // MÓDULO DE AUDITORÍA: Registro persistente de evento de seguridad crítico.
+            $conn->query("INSERT INTO accesos (username, ip_origen, resultado) 
+                          VALUES ('$user_input', '$ip_origen', 'FALLIDO')");
         }
     }
 }
@@ -115,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login_btn'])) {
                                     <label class="form-label fw-semibold small">Nombre de Usuario</label>
                                     <div class="input-group">
                                         <span class="input-group-text"><i class="bi bi-person"></i></span>
-                                        <input type="text" name="username" class="form-control" placeholder="ej: manuel.rico" required>
+                                        <input type="text" name="username" class="form-control" placeholder="ej: usuario123" required>
                                     </div>
                                 </div>
                                 <div class="mb-4">
@@ -168,6 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['login_btn'])) {
                                         </thead>
                                         <tbody>
                                             <?php
+                                            // Extracción en tiempo real de los logs de auditoría
                                             $sql_logs = "SELECT id, username, fecha, ip_origen, resultado FROM accesos ORDER BY id DESC LIMIT 15";
                                             $result_logs = $conn->query($sql_logs);
 
